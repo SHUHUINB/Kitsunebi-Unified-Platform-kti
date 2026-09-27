@@ -1,0 +1,65 @@
+# ---- 运行期数据 / runtime data -------------------------------------------
+var/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# ---- 凭据 / credentials ---------------------------------------------------
+# ★ 真实配置绝不入库。只提交 *.example。
+rewrite.env
+adapter/config.json
+!adapter/config.example.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*_credentials*
+.git-credentials
+
+# ---- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.data_smoke*/
+PYTHONPYCACHEPREFIX
+
+# ---- Node / 前端 ----------------------------------------------------------
+node_modules/
+frontend/node_modules/
+*.tsbuildinfo
+.vite/
+# 注意：frontend/dist 是**有意入库**的 —— 让一键部署不必先装 Node 也能跑。
+
+# ---- 打包产物 -------------------------------------------------------------
+*.tgz
+*.tar
+*.tar.gz
+*.zip
+*.whl
+dist_pack/
+_stage_*.tgz
+
+# ---- 抓包与样本 / captures and samples ------------------------------------
+*.pcap
+*.pcapng
+capture/
+samples/
+
+# ---- 编辑器与系统 ---------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 本地工具通道 ---------------------------------------------------------
+_srv_local.py

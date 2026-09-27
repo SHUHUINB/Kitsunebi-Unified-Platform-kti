@@ -1,0 +1,17 @@
+{
+  "admin_user": "admin",
+  "admin_password": "Adapter-Token-ChangeMe",
+  "admin_port": 8893,
+  "http_port": 8893,
+  "socks_port": 8892,
+  "chain_to_charles": true,
+  "charles_host": "127.0.0.1",
+  "charles_http_port": 8888,
+  "fallback_direct": true,
+  "charles_bypass_ports": [],
+  "bind_host": "0.0.0.0",
+  "db_path": "/opt/ccpx/accounts.db",
+  "log_path": "/opt/ccpx/adapter.log",
+  "require_proxy_auth": true,
+  "connect_timeout": 15.0
+}

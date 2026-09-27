@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>源码与功能清单 + 前后端分离架构设计 · 2026-09-26</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e2e5ea; --line2:#eef0f4;
+    --fg:#1f2329; --fg2:#5c6470; --fg3:#8a919c;
+    --accent:#2f6feb; --accent2:#eaf1ff;
+    --ok:#1a9c62; --ok2:#e8f6ef;
+    --warn:#c47f00; --warn2:#fdf4e3;
+    --bad:#d64545; --bad2:#fdecec;
+    --mono:'Cascadia Mono','Consolas','SFMono-Regular',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.7 -apple-system,'Segoe UI','Microsoft YaHei',system-ui,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+  header.top{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+             padding:22px 24px;margin-bottom:18px}
+  h1{margin:0 0 6px;font-size:22px;letter-spacing:.2px}
+  .sub{color:var(--fg2);font-size:13px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;
+         border:1px solid var(--line);background:var(--line2);color:var(--fg2);margin-right:6px}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:10px;border-left:3px solid var(--accent)}
+  h3{font-size:14.5px;margin:20px 0 8px;color:var(--fg)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:16px 18px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);
+        border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:8px 0 16px}
+  th{background:var(--line2);text-align:left;padding:8px 10px;font-weight:600;
+     color:var(--fg2);border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:7px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--line2);
+       padding:1px 5px;border-radius:4px;color:#2b3440}
+  pre{font-family:var(--mono);font-size:12.5px;background:#fafbfc;border:1px solid var(--line);
+      border-radius:8px;padding:14px 16px;overflow:auto;line-height:1.55;color:#2b3440}
+  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11.5px;
+       font-weight:600;letter-spacing:.3px;white-space:nowrap}
+  .t-ok{background:var(--ok2);color:var(--ok)}
+  .t-warn{background:var(--warn2);color:var(--warn)}
+  .t-bad{background:var(--bad2);color:var(--bad)}
+  .t-info{background:var(--accent2);color:var(--accent)}
+  ul{margin:6px 0 12px;padding-left:20px}
+  li{margin:4px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .stat .n{font-size:22px;font-weight:700;color:var(--accent);font-family:var(--mono)}
+  .stat .l{font-size:12px;color:var(--fg2);margin-top:2px}
+  .note{border-left:3px solid var(--warn);background:var(--warn2);
+        padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0;font-size:13px}
+  .note.bad{border-left-color:var(--bad);background:var(--bad2)}
+  .note.ok{border-left-color:var(--ok);background:var(--ok2)}
+  .muted{color:var(--fg3)}
+  .kbd{font-family:var(--mono);font-size:12px;border:1px solid var(--line);
+       border-bottom-width:2px;border-radius:4px;padding:0 5px;background:#fff}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>源码与功能清单 &nbsp;+&nbsp; 前后端分离架构设计</h1>
+  <div class="sub">
+    目标栈：Charles 管理台 · CCProxy 适配层 · 一花卡密 · WPE 封包编辑器 · MCP
+    &nbsp;|&nbsp; 服务器 <code>203.0.113.10</code> &nbsp;|&nbsp; 盘点日期 2026-09-26
+  </div>
+  <div style="margin-top:10px">
+    <span class="badge">盘点方式：源码静态读取 + 线上 md5 比对</span>
+    <span class="badge">未执行项已单独标注</span>
+  </div>
+</header>
+
+<!-- ============ 0. 摘要 ============ -->
+<div class="card">
+  <h3 style="margin-top:0">结论摘要</h3>
+  <ul>
+    <li><b>现状是「三个独立系统 + 一台反向代理」</b>，不是一套平台。管理台（Python）把适配层（Python）和一花（PHP + MySQL）用 HTTP 反代硬缝在一起，前端是无框架的原生 JS。</li>
+    <li><b>源码树分裂</b>：管理台有两份副本，<code>_net/charles_console/</code> 是 01:18 的过时版本，<code>_deploy/ccpx/</code> 才是线上权威（md5 已比对）。重构前必须先收敛成单一事实源。</li>
+    <li><b>鉴权规则有三套</b>：<code>/api/*</code> 校验 token、<code>/yh/**</code> 必须绕过 CSRF、静态资源完全不校验。这是补丁堆出来的，不是设计出来的。</li>
+    <li><b>重写范围</b>：管理台后端 3359 行 + 前端 3564 行 + 一花 PHP 约 8042 行。<b>适配层 4044 行不建议重写</b>——它是真在跑的代理核心，风险远大于收益。</li>
+    <li><b>目标形态</b>：前端 SPA（Vue3+Vite）＋ 统一 API 后端（FastAPI）＋ 数据层收敛；一花先做适配器保留，再迁数据下线 PHP。</li>
+  </ul>
+</div>
+
+<!-- ============ 1. 现状全景 ============ -->
+<h2>1. 现状全景</h2>
+
+<div class="grid3">
+  <div class="stat"><div class="n">3</div><div class="l">独立系统（管理台 / 适配层 / 一花）</div></div>
+  <div class="stat"><div class="n">7</div><div class="l">对外端口</div></div>
+  <div class="stat"><div class="n">~15.0k</div><div class="l">待重写代码行数</div></div>
+</div>
+
+<table>
+  <tr><th>端口</th><th>系统</th><th>技术栈</th><th>进程 / 服务</th><th>对外</th></tr>
+  <tr><td><code>8890</code></td><td>Charles 管理台（含 <code>/mcp</code>）</td><td>Python stdlib HTTPServer + 原生 JS</td><td><code>charles-console.service</code></td><td><span class="tag t-warn">0.0.0.0</span></td></tr>
+  <tr><td><code>8893</code></td><td>适配层管理 API</td><td>Python（Basic 认证）</td><td><code>ccpx.service</code></td><td><span class="tag t-warn">0.0.0.0</span></td></tr>
+  <tr><td><code>8888</code></td><td>适配层 HTTP 代理 + UDP 共享中继</td><td>Python</td><td><code>ccpx.service</code></td><td><span class="tag t-warn">0.0.0.0</span></td></tr>
+  <tr><td><code>8889</code></td><td>适配层 SOCKS5</td><td>Python</td><td><code>ccpx.service</code></td><td><span class="tag t-warn">0.0.0.0</span></td></tr>
+  <tr><td><code>18888 / 18889</code></td><td>Charles HTTP / SOCKS</td><td>Java</td><td><code>charles-headless.service</code></td><td><span class="tag t-ok">外网不通</span></td></tr>
+  <tr><td><code>8081</code></td><td>一花卡密</td><td>PHP + MySQL（Docker）</td><td><code>yihua-app</code> / <code>yihua-db</code></td><td><span class="tag t-ok">仅 127.0.0.1</span></td></tr>
+</table>
+
+<h3>数据流（现状）</h3>
+<pre>浏览器
+  └─ :8890 管理台（单进程，Python stdlib HTTPServer）
+       ├─ /                     → static/{index.html, app.js, modules.js, wpe.js}   原生 JS，无框架
+       ├─ /api/*                → 管理台自身逻辑（Charles 配置 / 备份 / 日志 / 证书 / 服务控制）
+       ├─ /api/ccpx/*           → HTTP 反代 → :8893 适配层管理 API
+       ├─ /api/wpe/*            → HTTP 反代 → :8893 /wpe/*
+       ├─ /api/wpe/dl           → 单独通道（二进制 + Content-Disposition，不能套 JSON）
+       ├─ /yh/*  + /assets/**   → HTTP 反代 → :8081 一花 PHP（含 iframe 式后台）
+       ├─ /api/charles          → HTTP 反代 → :18888 Charles Web Interface（绝对 URI 请求行）
+       ├─ /mcp                  → MCP 服务端（17 个 WPE 工具，JSON-RPC over HTTP）
+       └─ /ca.crt /ca.pem       → 根证书下载（每台机器各自生成）
+
+用户手机 ──(HTTP/SOCKS5)──▶ :8888 / :8889 适配层 ──▶ :18888/18889 Charles ──▶ 互联网
+                                   │
+                                   └─ WpeEngine 环形缓冲（4000）← 抓包点就在这条转发路径上</pre>
+
+<!-- ============ 2. 源码清单 ============ -->
+<h2>2. 源码清单</h2>
+
+<h3>2.1 管理台后端</h3>
+<table>
+  <tr><th>文件</th><th>体量</th><th>状态</th><th>职责</th></tr>
+  <tr>
+    <td><code>_deploy/ccpx/_console_server.py</code></td>
+    <td>159,107 B<br>3,359 行</td>
+    <td><span class="tag t-ok">权威</span></td>
+    <td>线上 <code>/opt/charles-console/server.py</code>，md5 <code>1796539c…</code> 完全一致。含全部 HTTP 路由、鉴权、CSRF、反代、MCP 服务端、用户管理（PBKDF2）。</td>
+  </tr>
+  <tr>
+    <td><code>_net/charles_console/server.py</code></td>
+    <td>116,487 B<br>2,502 行</td>
+    <td><span class="tag t-bad">过时副本</span></td>
+    <td>md5 <code>6586153a…</code>，01:18 冻结。缺 MCP、缺 UDP 修复后的联动改动。<b>应删除或归档，不参与重构。</b></td>
+  </tr>
+</table>
+
+<h3>2.2 管理台前端（部署为 <code>/opt/charles-console/static/</code>）</h3>
+<table>
+  <tr><th>源文件</th><th>部署名</th><th>体量</th><th>线上 md5 校验</th></tr>
+  <tr><td><code>_console_index.html</code></td><td><code>index.html</code></td><td>8,647 B / 196 行</td><td><span class="tag t-ok">f2975eb3 一致</span></td></tr>
+  <tr><td><code>_console_app.js</code></td><td><code>app.js</code></td><td>76,620 B / 1,658 行</td><td><span class="tag t-ok">4bf7302c 一致</span></td></tr>
+  <tr><td><code>_console_modules.js</code></td><td><code>modules.js</code></td><td>29,399 B / 494 行</td><td><span class="tag t-ok">03b6e8c0 一致</span></td></tr>
+  <tr><td><code>_console_wpe.js</code></td><td><code>wpe.js</code></td><td>69,057 B / 1,412 行</td><td><span class="tag t-ok">453271e9 一致</span></td></tr>
+</table>
+<div class="note ok">
+  <b>4/4 静态资源与线上逐字节一致。</b> <code>_deploy/ccpx/</code> 是干净且唯一的权威源，重构可以放心从这里起步。
+</div>
+
+<h3>2.3 适配层</h3>
+<table>
+  <tr><th>文件</th><th>体量</th><th>职责</th></tr>
+  <tr><td><code>_deploy/ccpx/ccproxy_adapter.py</code></td><td>189,540 B / 4,044 行</td>
+      <td>HTTP 代理、SOCKS5、UDP 共享中继与自愈关联、管理 API、WPE 引擎（环形缓冲 + 结构解析 + 断点 + 改写 + 导出导入）。</td></tr>
+</table>
+<div class="note">
+  <b>不建议重写。</b> 这是真在承载流量的代理核心（8888/8889），且 UDP 自愈、SOCKS5 关联、CONNECT 隧道这些路径都是踩坑踩出来的。重构时应当<b>原样保留</b>，只在前面加统一 API 层做适配。
+</div>
+
+<h3>2.4 一花卡密</h3>
+<table>
+  <tr><th>路径</th><th>体量</th><th>职责</th></tr>
+  <tr><td><code>_deploy/yihua/最新一花ccproxy源码（修复后台bug）/ccproxy_kami-ccproxyV1.5.2.2/</code></td>
+      <td>43 个 PHP<br>约 8,042 行</td>
+      <td>第三方产品 ccproxy_kami V1.5.2.2。卡密生成/校验、代理账号下发、应用与服务器管理、用户管理、日志统计。自带 MySQL 库。</td></tr>
+</table>
+
+<!-- ============ 3. 功能清单 ============ -->
+<h2>3. 功能清单（全量）</h2>
+
+<h3>3.1 管理台路由（GET 侧 25 条）</h3>
+<table>
+  <tr><th>路由</th><th>鉴权</th><th>功能</th></tr>
+  <tr><td><code>/ok</code></td><td>—</td><td>存活探针</td></tr>
+  <tr><td><code>/socks</code></td><td>—</td><td>Map Remote 验证探针落点</td></tr>
+  <tr><td><code>/</code> <code>/index.html</code> <code>*.js/.css/.svg/.png/.ico</code></td><td><span class="tag t-bad">不校验</span></td><td>静态资源（<b>已知缺陷</b>：<code>/modules.js</code> 暴露全部配置路径）</td></tr>
+  <tr><td><code>/yh/*</code></td><td>token</td><td>一花页面反代</td></tr>
+  <tr><td><code>/mcp</code></td><td>token</td><td>MCP：GET 走 SSE</td></tr>
+  <tr><td><code>/api/me</code> <code>/api/avatar</code></td><td>token</td><td>当前用户 / QQ 头像</td></tr>
+  <tr><td><code>/api/state</code></td><td>token</td><td>管理台状态聚合</td></tr>
+  <tr><td><code>/api/config</code></td><td>token</td><td>Charles 配置 XML</td></tr>
+  <tr><td><code>/api/ca</code></td><td>token</td><td>根证书现场（headless 下唯一可看处）</td></tr>
+  <tr><td><code>/api/backups</code></td><td>token</td><td>备份列表</td></tr>
+  <tr><td><code>/api/logs?lines=</code></td><td>token</td><td>日志</td></tr>
+  <tr><td><code>/api/help?name=</code></td><td>token</td><td>帮助页</td></tr>
+  <tr><td><code>/api/charles?path=</code></td><td>token</td><td>Charles Web Interface 反代</td></tr>
+  <tr><td><code>/api/ccpx/status</code></td><td>token</td><td>适配层状态</td></tr>
+  <tr><td><code>/api/ccpx/live</code></td><td>token</td><td><b>真实连接数</b>（按账号：当前/峰值/累计）</td></tr>
+  <tr><td><code>/api/ccpx/accounts</code></td><td>token</td><td>账号列表（解析 CCProxy HTML 表单）</td></tr>
+  <tr><td><code>/api/ccpx/log</code></td><td>token</td><td>适配层日志</td></tr>
+  <tr><td><code>/api/ccpx/yh</code></td><td>token</td><td>一花侧会话状态（免登录 token）</td></tr>
+  <tr><td><code>/api/wpe/dl?name=</code></td><td>token</td><td><b>导出文件下载</b>（独立通道，必须排在通用分支之前）</td></tr>
+  <tr><td><code>/api/wpe/*</code></td><td>token</td><td>WPE 读操作，全量转发 :8893</td></tr>
+</table>
+
+<h3>3.2 管理台路由（POST 侧 10 条）</h3>
+<table>
+  <tr><th>路由</th><th>位置约束</th><th>功能</th></tr>
+  <tr><td><code>/api/login</code> <code>/api/logout</code></td><td>必须在鉴权<b>之前</b></td><td>登录 / 登出</td></tr>
+  <tr><td><code>/yh/*</code></td><td>必须在 <code>_csrf_ok()</code> <b>之前</b></td><td>一花表单 / ajax 提交（jQuery 不带 <code>X-CC</code> 头）</td></tr>
+  <tr><td><code>/mcp</code></td><td>必须在 <code>_csrf_ok()</code> <b>之前</b></td><td>MCP JSON-RPC</td></tr>
+  <tr><td><code>/api/wpe/*</code></td><td>必须在 <code>_body()</code> <b>之前</b></td><td>WPE 写操作（断点/放行/重放/发送/清空），要原样转发 body</td></tr>
+  <tr><td><code>/api/ccpx/add</code> <code>/edit</code> <code>/delete</code></td><td>过 CSRF</td><td>账号增改删（转成 CCProxy 表单格式）</td></tr>
+  <tr><td><code>/api/apply</code> <code>/api/raw</code></td><td>过 CSRF</td><td>增量改动 / 原始 XML 写入</td></tr>
+  <tr><td><code>/api/backup</code> <code>/api/restore</code></td><td>过 CSRF</td><td>备份 / 恢复</td></tr>
+  <tr><td><code>/api/service</code></td><td>过 CSRF</td><td>服务启停</td></tr>
+</table>
+<div class="note bad">
+  <b>这四道「必须在谁之前」就是现状架构的病历。</b> 一个 handler 里混着鉴权、CSRF、反代、静态资源四类关注点，顺序错一个就是 403 或白屏。重构的第一价值就是把这四条约束消掉。
+</div>
+
+<h3>3.3 前端视图（9 个）</h3>
+<table>
+  <tr><th>视图函数</th><th>所在文件</th><th>功能</th></tr>
+  <tr><td><code>viewOverview()</code></td><td>app.js</td><td>总览仪表盘</td></tr>
+  <tr><td><code>viewLogs()</code></td><td>app.js</td><td>日志查看</td></tr>
+  <tr><td><code>viewBackups()</code></td><td>app.js</td><td>备份管理</td></tr>
+  <tr><td><code>viewWebif()</code></td><td>app.js</td><td>Charles Web Interface 内嵌</td></tr>
+  <tr><td><code>viewRaw()</code></td><td>app.js</td><td>原始 XML 编辑</td></tr>
+  <tr><td><code>viewAbout()</code></td><td>app.js</td><td>关于 / 证书下载</td></tr>
+  <tr><td><code>viewYh()</code></td><td>app.js</td><td><b>业务系统：一花卡密</b>（内嵌 PHP 后台）</td></tr>
+  <tr><td><code>viewCcpx()</code></td><td>app.js</td><td><b>业务系统：CCProxy 适配层</b></td></tr>
+  <tr><td><code>viewWpe()</code></td><td>wpe.js</td><td><b>业务系统：WPE 封包编辑器</b>（13 项功能）</td></tr>
+</table>
+<p class="muted"><code>modules.js</code> 负责 Charles 配置模块定义（14 个页面 / 107 个配置路径），导航由它动态渲染进 <code>#nav</code>。</p>
+
+<h3>3.4 适配层能力</h3>
+<table>
+  <tr><th>类</th><th>职责</th></tr>
+  <tr><td><code>AccountStore</code></td><td>账号存储（SQLite）</td></tr>
+  <tr><td><code>FrontService</code></td><td>HTTP 代理前端 + CONNECT 隧道</td></tr>
+  <tr><td><code>ProxyService</code></td><td>SOCKS5 + UDP 共享中继 + 自愈关联</td></tr>
+  <tr><td><code>AdminService</code></td><td>:8893 管理 API（<code>/account</code> <code>/status</code> <code>/live</code> <code>/wpe/*</code>）</td></tr>
+  <tr><td><code>WpeEngine</code></td><td>环形缓冲 4000 + 结构解析 + 断点 + 改写 + 导出导入</td></tr>
+  <tr><td><code>LiveStats</code></td><td>连接数账本</td></tr>
+</table>
+<p><b>14 条 <code>/wpe/*</code> 路由：</b>
+<code>list</code> <code>get</code> <code>stat</code> <code>rewrite</code> <code>hold</code> <code>release</code> <code>replay</code> <code>send</code>
+<code>export</code> <code>export/save</code> <code>export/download</code> <code>export/list</code> <code>import</code> <code>clear</code></p>
+<p><b>结构解析分层：</b>HTTP / TLS / DNS / SOCKS5 / MQTT，每字段带 offset+len；认不出退化为单条 BIN，<b>绝不猜</b>。</p>
+
+<h3>3.5 一花卡密</h3>
+<table>
+  <tr><th>分类</th><th>内容</th></tr>
+  <tr><td>后台页面（19）</td><td><code>index</code> <code>primary</code> <code>login</code> <code>kami</code> <code>new_kami</code> <code>app</code> <code>newapp</code> <code>code</code> <code>editserver</code> <code>edituser</code> <code>newserver</code> <code>newuser</code> <code>hostset</code> <code>log</code> <code>server_list</code> <code>usermanger</code> <code>update_password</code> <code>head</code> <code>foot</code></td></tr>
+  <tr><td>AJAX 分支（25）</td><td><code>apptable</code> <code>delapp</code> <code>delkami</code> <code>editserver</code> <code>getapp</code> <code>getkami</code> <code>getlog</code> <code>getuserall</code> <code>newkami</code> <code>newserver</code> <code>seldel</code> <code>seldeluser</code> <code>serverdel</code> <code>servertable</code> <code>siteinfo</code> <code>update</code> <code>updatepwd</code> <code>updateset</code> <code>upswitch</code> <code>userswitch</code> <code>userupdate</code> <code>adduser</code> <code>getserver</code> <code>newapp</code> <code>upswitchuser</code></td></tr>
+  <tr><td>对外 API</td><td><code>api/api.php</code>（35 行，<code>switch($act)</code> 分发）、<code>api/cpproxy.php</code>（514 行，CCProxy 管理协议实现）</td></tr>
+  <tr><td>includes</td><td><code>function.php</code>(926) <code>member.php</code> <code>common.php</code> <code>dbhelp.php</code> <code>Scheduler.php</code> <code>Task.php</code> <code>ValidateCode</code> <code>authcode</code> <code>hieroglyphy</code> <code>txprotect</code></td></tr>
+</table>
+
+<h3>3.6 MCP 工具（17）</h3>
+<p><code>wpe_stat</code> <code>wpe_list</code> <code>wpe_get</code> <code>wpe_struct</code> <code>wpe_rewrite_get</code> <code>wpe_rewrite_set</code>
+<code>wpe_hold_get</code> <code>wpe_hold_set</code> <code>wpe_release</code> <code>wpe_replay</code> <code>wpe_send</code>
+<code>wpe_export</code> <code>wpe_export_save</code> <code>wpe_export_list</code> <code>wpe_export_download</code> <code>wpe_import</code> <code>wpe_clear</code></p>
+<p class="muted">端点 <code>http://203.0.113.10:8890/mcp</code>，Streamable HTTP。每个工具只把参数拼成 <code>/wpe/*</code> 请求，<b>不重复实现语义</b>。</p>
+
+<!-- ============ 4. 问题 ============ -->
+<h2>4. 现状架构问题（带证据）</h2>
+<table>
+  <tr><th>#</th><th>问题</th><th>证据</th><th>后果</th></tr>
+  <tr><td>1</td><td><b>源码树分裂</b></td><td><code>_net/charles_console/server.py</code> 与 <code>_deploy/ccpx/_console_server.py</code> 两份，md5 不同</td><td>改错文件 = 白干。新人无法判断哪份有效</td></tr>
+  <tr><td>2</td><td><b>前端无框架无构建</b></td><td>app.js 1658 行 + wpe.js 1412 行，靠全局函数 <code>apiUrl</code>/<code>esc</code>/<code>toast</code>/<code>show</code> 互相依赖</td><td>改一处崩一片；无法做类型检查与单元测试</td></tr>
+  <tr><td>3</td><td><b>三套鉴权规则</b></td><td><code>/api/*</code> 校验 token；<code>/yh/**</code> 必须绕过 CSRF；静态资源完全不校验</td><td>安全边界靠「顺序」维持，加一条路由就要重新推理一遍</td></tr>
+  <tr><td>4</td><td><b>关注点全挤在一个 handler</b></td><td><code>do_GET</code>/<code>do_POST</code> 里同时有鉴权、CSRF、反代、静态资源、MCP</td><td>路由顺序成为隐性契约（注释里写着「必须在 X 之前」×4）</td></tr>
+  <tr><td>5</td><td><b>一花是异构系统</b></td><td>PHP + 独立 MySQL，被反代塞进 <code>/yh/</code>；其 <code>code</code> 返回值不可信，必须直读数据库</td><td>同一个「账号」在三处有不同表示，一致性靠人工</td></tr>
+  <tr><td>6</td><td><b>MCP 是后加的</b></td><td>挂在 HTTP handler 内，与 REST 路由混在同一个 <code>do_POST</code></td><td>协议演进会继续污染业务路由</td></tr>
+  <tr><td>7</td><td><b>静态资源泄露配置路径</b></td><td><code>/modules.js</code> 无鉴权可读，暴露全部 107 个配置路径</td><td>信息泄露；但直接加鉴权会导致页面白屏（<code>&lt;script src&gt;</code> 不带 token）</td></tr>
+</table>
+
+<!-- ============ 5. 目标架构 ============ -->
+<h2>5. 目标架构（前后端分离 + 完整整合）</h2>
+
+<pre>┌──────────────────────────────────────────────────────────────┐
+│  浏览器 · 统一 SPA（Vue 3 + Vite + Pinia）                    │
+│  Charles 配置 │ 适配层 │ WPE 封包编辑器 │ 卡密 │ 用户 │ 概览    │
+└───────────────────────────┬──────────────────────────────────┘
+                            │  HTTPS/HTTP · 统一 JWT/Cookie 鉴权
+┌───────────────────────────▼──────────────────────────────────┐
+│  静态资源服务（Nginx 或后端同源托管）                          │
+│    /            → SPA 构建产物（hash 命名，可长缓存）          │
+│    /api/v1/**   → 业务后端                                    │
+│    /mcp         → MCP 端点                                    │
+└───────────────────────────┬──────────────────────────────────┘
+                            │  内网 HTTP（仅监听回环）
+┌───────────────────────────▼──────────────────────────────────┐
+│  统一业务后端（FastAPI · 单进程多路由模块）                    │
+│  ├─ auth      统一鉴权（一处，不再有「必须放在 X 之前」）      │
+│  ├─ charles   Charles 配置域（XML 读写 / 备份 / 证书 / 日志）   │
+│  ├─ ccpx      适配层域（适配器 → :8893）                      │
+│  ├─ wpe       封包编辑域（适配器 → :8893 /wpe/*）             │
+│  ├─ kami      卡密域（阶段一：适配一花 PHP；阶段二：直连数据层）│
+│  └─ mcp       MCP 服务端（独立路由模块，与 REST 解耦）         │
+└──────┬────────────────────┬───────────────────────┬──────────┘
+       │                    │                       │
+       ▼                    ▼                       ▼
+  :8893 适配层管理      :8888/:8889 代理       统一数据层
+  （保持不动）          （保持不动）            （SQLite → Postgres）
+                                                 账号 / 卡密 / 用户 / 审计</pre>
+
+<h3>关键决策</h3>
+<table>
+  <tr><th>层</th><th>选型</th><th>理由</th></tr>
+  <tr><td>前端</td><td><b>Vue 3 + Vite + Pinia</b></td><td>组件化拆掉 3564 行原生 JS；构建产物 hash 命名解决静态资源缓存与泄露；类型检查与单测成为可能</td></tr>
+  <tr><td>后端</td><td><b>FastAPI</b></td><td>依赖注入天然适合「鉴权一处」；自动 OpenAPI 直接成为前端契约；异步适配长轮询与 SSE</td></tr>
+  <tr><td>适配层</td><td><b>原样保留</b>（Python，:8888/:8889/:8893）</td><td>真在承载流量，UDP 自愈/SOCKS5/CONNECT 都是踩坑产物，重写风险远大于收益</td></tr>
+  <tr><td>一花</td><td><b>阶段一适配器保留 → 阶段二数据层收敛</b></td><td>8042 行 PHP 一次性重写风险过高；先用适配器包成 REST，验证等价后再迁数据、下线 PHP</td></tr>
+  <tr><td>数据层</td><td>SQLite → PostgreSQL</td><td>先沿用 SQLite 降低迁移风险；三系统账号模型统一后视并发量再升</td></tr>
+  <tr><td>鉴权</td><td>统一 JWT / HttpOnly Cookie</td><td>消除「token 在 query 里传」「<code>/yh/**</code> 绕过 CSRF」这两类历史包袱</td></tr>
+</table>
+
+<h3>统一 API 契约（草案 v1）</h3>
+<pre># 认证
+POST   /api/v1/auth/login            POST   /api/v1/auth/logout       GET /api/v1/auth/me
+
+# 概览
+GET    /api/v1/overview              # 三系统健康 + 关键指标聚合
+
+# Charles 配置域
+GET    /api/v1/charles/config        PUT  /api/v1/charles/config
+POST   /api/v1/charles/changes       POST /api/v1/charles/raw
+GET    /api/v1/charles/modules       GET  /api/v1/charles/ca
+GET    /api/v1/charles/backups       POST /api/v1/charles/backups
+POST   /api/v1/charles/backups/{n}/restore
+GET    /api/v1/charles/logs          POST /api/v1/charles/service
+
+# 适配层域
+GET    /api/v1/ccpx/status           GET  /api/v1/ccpx/live
+GET    /api/v1/ccpx/accounts         POST /api/v1/ccpx/accounts
+PUT    /api/v1/ccpx/accounts/{user}  DELETE /api/v1/ccpx/accounts/{user}
+
+# WPE 域
+GET    /api/v1/wpe/stat
+GET    /api/v1/wpe/packets           # since / before / limit / 过滤条件
+GET    /api/v1/wpe/packets/{id}      GET  /api/v1/wpe/packets/{id}/struct
+POST   /api/v1/wpe/packets/{id}/replay
+POST   /api/v1/wpe/send
+GET|PUT /api/v1/wpe/rewrite          GET|PUT /api/v1/wpe/hold
+POST   /api/v1/wpe/hold/{id}/release
+GET|POST /api/v1/wpe/exports         GET  /api/v1/wpe/exports/{name}/download
+POST   /api/v1/wpe/import            DELETE /api/v1/wpe/packets
+
+# 卡密域（替代一花 PHP）
+GET    /api/v1/kami/list             POST /api/v1/kami
+PUT    /api/v1/kami/{id}             DELETE /api/v1/kami/{id}
+GET|POST /api/v1/kami/apps           GET|POST /api/v1/kami/users
+GET|POST /api/v1/kami/servers        GET  /api/v1/kami/logs
+GET    /api/v1/kami/stats
+
+# MCP（保持兼容，路径不变）
+POST   /mcp                          GET  /mcp   (SSE)</pre>
+
+<!-- ============ 6. 迁移路线 ============ -->
+<h2>6. 迁移路线</h2>
+<table>
+  <tr><th>阶段</th><th>内容</th><th>验收判据</th></tr>
+  <tr>
+    <td><b>P0</b><br>收敛</td>
+    <td>删除/归档 <code>_net/charles_console/</code> 过时副本；确立 <code>_deploy/ccpx/</code> 为唯一事实源；把三系统源码集中到 <code>_rewrite/</code> 下</td>
+    <td>全仓库只有一个 <code>server.py</code>；md5 与线上一致</td>
+  </tr>
+  <tr>
+    <td><b>P1</b><br>后端骨架</td>
+    <td>FastAPI 起骨架；把现有 35 条路由按域拆成路由模块；鉴权收敛到一处；OpenAPI 自动生成</td>
+    <td>新后端能 1:1 覆盖旧路由；<code>/api/v1/**</code> 与旧 <code>/api/*</code> 可并行运行对比</td>
+  </tr>
+  <tr>
+    <td><b>P2</b><br>前端骨架</td>
+    <td>Vue3+Vite 起项目；先迁移 <b>WPE 封包编辑器</b>（功能最独立、现有前端最规范）作为试点</td>
+    <td>WPE 页面在 SPA 中功能与旧版逐项对齐（13 项功能 + 全部元素 id）</td>
+  </tr>
+  <tr>
+    <td><b>P3</b><br>全量前端</td>
+    <td>迁移 Charles 配置 / 概览 / 日志 / 备份 / 证书；一花后台用 Vue 重画，后端走适配器</td>
+    <td>旧 <code>app.js</code>/<code>modules.js</code>/<code>wpe.js</code> 可下线</td>
+  </tr>
+  <tr>
+    <td><b>P4</b><br>卡密收敛</td>
+    <td>一花数据迁入统一数据层；PHP 下线；账号模型三处合一</td>
+    <td>卡密/账号/用户只存在一处数据源；一花 PHP 进程停止</td>
+  </tr>
+  <tr>
+    <td><b>P5</b><br>切换</td>
+    <td>Nginx 前置；新旧并行 → 灰度 → 全量；旧栈归档</td>
+    <td>回归全绿；回滚路径可用</td>
+  </tr>
+</table>
+<div class="note ok">
+  <b>贯穿全程的硬约束（沿用现有纪律）：</b> 先备份 → 上传后三方 md5 比对 → 远端语法检查 → 属主正确 → 回归必跑。
+  重构期间<b>旧栈保持可运行</b>，新栈并行验证，不做「一次性切换」。
+</div>
+
+<!-- ============ 7. 待确认 ============ -->
+<h2>7. 待确认的决策点</h2>
+<table>
+  <tr><th>#</th><th>决策点</th><th>选项</th><th>影响面</th></tr>
+  <tr>
+    <td>D1</td><td>技术栈</td>
+    <td>A：FastAPI + Vue3（推荐）<br>B：保持 Python stdlib + 轻量前端</td>
+    <td>决定整个 P1/P2 的工作量与最终可维护性</td>
+  </tr>
+  <tr>
+    <td>D2</td><td>一花怎么处理</td>
+    <td>A：适配器保留，数据层后迁（推荐）<br>B：直接重写数据层，PHP 立即下线<br>C：完全丢弃一花</td>
+    <td>决定 8042 行 PHP 的去留与卡密功能连续性</td>
+  </tr>
+  <tr>
+    <td>D3</td><td>落盘方式</td>
+    <td>A：新建 <code>_rewrite/</code> 从零搭（推荐）<br>B：就地重构 <code>_deploy/ccpx/</code></td>
+    <td>决定旧栈是否可随时回滚</td>
+  </tr>
+</table>
+
+<hr style="border:none;border-top:1px solid var(--line);margin:34px 0 14px">
+<p class="muted" style="font-size:12.5px">
+  本文档为静态盘点结果，所有体量与 md5 均来自实际文件读取，未做估算。<br>
+  未执行项：<b>浏览器 UI 点击验证</b>（<code>agent-browser</code> 守护进程僵死）、<b>一花 25 个 ajax 分支的逐条语义复核</b>（本轮只统计了分支名）。<br>
+  盘点时间 2026-09-26 · 工作区 <code>D:\项目\和平精英m</code>
+</p>
+
+</div>
+</body>
+</html>

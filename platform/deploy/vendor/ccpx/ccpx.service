@@ -1,0 +1,28 @@
+[Unit]
+Description=CCProxy protocol adapter (yihua card-system backend)
+Documentation=file:/opt/ccpx/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ccpx
+ExecStart=/usr/bin/python3 /opt/ccpx/ccproxy_adapter.py --config /opt/ccpx/config.json
+# 启动前先自证：配置能解析、端口能绑、依赖齐全。自检不过就不启动，
+# 免得留下一个「active 但什么都不干」的服务 —— 那种状态最难查。
+ExecStartPre=/usr/bin/python3 /opt/ccpx/ccproxy_adapter.py --selftest
+Restart=always
+RestartSec=2
+User=ccpx
+Group=ccpx
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/ccpx
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

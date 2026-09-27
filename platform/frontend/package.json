@@ -1,0 +1,20 @@
+{
+  "name": "kit-soun-console",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "kit端口统一平台-soun —— Charles / CCProxy / WPE / 卡密 统一前端",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.11"
+  }
+}

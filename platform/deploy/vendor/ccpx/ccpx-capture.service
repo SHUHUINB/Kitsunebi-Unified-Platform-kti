@@ -1,0 +1,21 @@
+[Unit]
+Description=CCPX 全量抓包（tcpdump -> pcap）
+Documentation=file:/opt/ccpx/README.md
+# 抓包是**旁路**：它挂了不能拖垮代理。所以不写 Wants/Requires ccpx.service，
+# 两个单元互不依赖，各自重启各自的。
+After=network.target
+
+[Service]
+Type=simple
+# -s 0 抓全包（不截断）；-U 边抓边写（否则崩溃时缓冲区全丢）；
+# -G 600 每 600 秒换一个文件；-z gzip 落盘即压缩。
+# ★ 落盘目录必须是 /opt/ccpx/capture —— 它在 ReadWritePaths 之外，
+#   所以这里不能加 ProtectSystem，否则 tcpdump 写不进去。
+ExecStart=/usr/bin/tcpdump -i eth0 -s 0 -U -w /opt/ccpx/capture/cap_%%Y%%m%%d_%%H%%M%%S.pcap -G 600 -z /usr/bin/gzip
+Restart=always
+RestartSec=5
+# 抓包会丢包在自己被调度不及时，给一点优先级。
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

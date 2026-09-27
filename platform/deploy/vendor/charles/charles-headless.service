@@ -1,0 +1,26 @@
+[Unit]
+Description=Charles Proxy (headless) — 花瓶 / kit端口统一平台-soun
+Documentation=https://www.charlesproxy.com/documentation/using-charles/command-line-options/
+After=network-online.target
+Wants=network-online.target
+# 关闭启动速率限制。systemd 默认 StartLimitBurst=5 / StartLimitIntervalSec=10s，
+# 即「10 秒内最多启动 5 次」。管理台每次写入配置都是 stop→start（写入前必须停，
+# 否则 Charles 退出时会用内存配置覆盖文件），用户连点几次「应用」就会撞上限制：
+# 单元被标记 failed，此后 start 一律返回 "Start request repeated too quickly"，
+# 代理再也起不来，只能手工 reset-failed。已实测复现（Result=start-limit-hit）。
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/charles-proxy
+ExecStart=/opt/charles-proxy/bin/charles -headless
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

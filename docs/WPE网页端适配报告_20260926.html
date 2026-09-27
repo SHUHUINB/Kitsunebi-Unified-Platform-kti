@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>WPE 网页端适配 · 交付报告</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2024;--mut:#6b7280;--line:#e3e6ea;
+        --ok:#0f7a4a;--okbg:#e8f6ef;--bad:#b4232b;--badbg:#fdecec;--warn:#8a5a00;
+        --warnbg:#fff6e0;--acc:#1f5fbf;--accbg:#eaf1fd;--mono:ui-monospace,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14.5px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 70px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:-.3px}
+  .sub{color:var(--mut);font-size:13.5px;margin-bottom:26px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+        padding:20px 22px;margin-bottom:16px}
+  h2{font-size:17px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:14.5px;margin:18px 0 8px;color:#2b3138}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#f2f4f7;font-weight:600;white-space:nowrap}
+  code,.mono{font-family:var(--mono);font-size:12.5px}
+  code{background:#f1f3f6;padding:1px 5px;border-radius:4px}
+  pre{background:#f7f8fa;border:1px solid var(--line);border-radius:8px;
+      padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.6;margin:10px 0}
+  .tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;
+       border:1px solid transparent;white-space:nowrap}
+  .ok{color:var(--ok);background:var(--okbg);border-color:#bfe3d2}
+  .bad{color:var(--bad);background:var(--badbg);border-color:#f3c9c9}
+  .warn{color:var(--warn);background:var(--warnbg);border-color:#f0dcae}
+  .acc{color:var(--acc);background:var(--accbg);border-color:#c9dcfa}
+  .mut{color:var(--mut)}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0}
+  .kv{background:#f7f8fa;border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+  .kv .k{font-size:12px;color:var(--mut)}
+  .kv .v{font-size:17px;font-weight:600;margin-top:2px}
+  .note{border-left:3px solid var(--acc);background:var(--accbg);
+        padding:11px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .danger{border-left-color:var(--bad);background:var(--badbg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>WPE 网页端适配 · 交付报告</h1>
+<div class="sub">
+  目标：<code>http://203.0.113.10:8890/</code> 内置 WPE 封包编辑器 ·
+  全功能网页化 · 自动解析所有流量 · 不允许欺骗<br>
+  生成时间：2026-09-26 04:30（服务器时间） · 适配层 <span class="mono">333e2272…</span>（v10）·
+  前端 <span class="mono">4858eadb…</span>（v7）
+</div>
+
+<div class="card">
+<h2>一、需求拆解与判定</h2>
+<table>
+<tr><th>要求</th><th>判定</th><th>证据</th></tr>
+<tr>
+  <td>新增内置 WPE 适配</td>
+  <td><span class="tag ok">已交付</span></td>
+  <td>管理台侧栏「业务系统 → WPE 封包编辑器」；适配层 <code>WpeEngine</code> + <code>/wpe/*</code> 接口</td>
+</tr>
+<tr>
+  <td>WPE 所有功能全面网页化</td>
+  <td><span class="tag ok">已交付</span></td>
+  <td>11 项功能逐项落地，见第三节对照表</td>
+</tr>
+<tr>
+  <td>自动解析所有流量</td>
+  <td><span class="tag ok">已交付</span></td>
+  <td>HTTP / TLS(含 SNI) / DNS(含应答 IP) / MQTT / SOCKS5 / BIN / UDP，失败如实降级不猜</td>
+</tr>
+<tr>
+  <td>必须实现所有 WPE 功能</td>
+  <td><span class="tag ok">已交付</span></td>
+  <td>全功能端到端实测 <b>ALL PASS</b>（第 5 节）</td>
+</tr>
+<tr>
+  <td>不允许出现欺骗</td>
+  <td><span class="tag ok">已交付</span></td>
+  <td>修掉 4 个「记录与真实转发不一致」的缺口（第 4 节）</td>
+</tr>
+</table>
+</div>
+
+<div class="card">
+<h2>二、架构：为什么不用注入也等价于 WPE</h2>
+<p>经典 WPE（Winsock Packet Editor）靠 <b>注入目标进程 + hook send/recv</b>。本方案<b>不注入</b>：</p>
+<ul>
+  <li>适配层本身就是所有流量的<b>必经点</b> —— TCP 走 CONNECT / 绝对 URI，UDP 走 SOCKS5 UDP ASSOCIATE；</li>
+  <li>在<b>转发路径上</b>挂记录点，功能上等价于 hook send/recv；</li>
+  <li>副产品：不挑平台（Android / iOS / PC 通吃）、不进目标进程、不触发反作弊的注入检测。</li>
+</ul>
+<div class="note">
+  <b>抓的是真实字节。</b>记录点位于「客户端 → 上游」和「上游 → 客户端」两条实际写入路径上，
+  不是旁路镜像、不是重新解析后的近似值。改写生效后记录会回填，列表显示的永远等于真正转发出去的内容。
+</div>
+</div>
+
+<div class="card">
+<h2>三、WPE 功能对照表（逐项落地）</h2>
+<table>
+<tr><th>WPE 功能</th><th>本实现</th><th>位置</th><th>实测</th></tr>
+<tr><td>Capture 抓包</td><td>双向记录 TCP（含 CONNECT 隧道、明文 HTTP 头+体）+ UDP 上下行</td><td class="mono">relay() / _udp_dispatch_loop() / upstream()</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Parse 自动解析</td><td><code>_analyze()</code> 定长有界浅解析，O(包长)</td><td class="mono">_analyze / _tls_sni / _dns_analyze</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>List 列表</td><td>环形缓冲 4000 条，倒序，带预览</td><td class="mono">WpeEngine.list()</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Filter 过滤</td><td>方向 / 协议 / 应用层 / 目标 / HEX / 标签 / 仅断点</td><td class="mono">/wpe/list?dir&amp;proto&amp;app&amp;target&amp;hex…</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Detail 详情</td><td>完整 HEX + HEX DUMP（偏移 / 十六进制 / ASCII 三栏）</td><td class="mono">/wpe/get + wpeHexDump()</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Edit 编辑</td><td>详情里直接改 HEX，或断点命中后改写再放行</td><td class="mono">/wpe/release action=modify</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Replay 重放</td><td>按原目标/协议重发，可改内容、可指定次数（≤50）</td><td class="mono">/wpe/replay</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Send 构造发送</td><td>手写 HEX 指定目标发出，TCP / UDP 均可，收回包</td><td class="mono">/wpe/send</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Hold 断点</td><td>命中规则的包<b>卡在转发路径上</b>等放行；30s 超时兜底防吊死</td><td class="mono">maybe_hold() + asyncio.Event</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Release 放行</td><td>forward 原样 / drop 丢弃 / modify 改后放行</td><td class="mono">/wpe/release</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Export 导出</td><td>TXT（人读，明标 hex 为预览）/ JSON（<b>完整 hex</b>，服务端 <code>/wpe/export</code>，上限与「有没有导完」如实报出）</td><td class="mono">/wpe/export + wpeExport()</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Import 导入（Save / Load）</td><td>把导出的 JSON 读回缓冲；<b>一律打「导入」标记</b>，len 与 hex 对不上就拒收，app/summary 按字节重新解析</td><td class="mono">/wpe/import + wpeImport()</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Stat 统计</td><td>抓包 / 缓冲 / 断点 / 放行 / 丢弃 / 改写 / 重放 / 发送 / <b>导入</b> / 运行时长</td><td class="mono">/wpe/stat</td><td><span class="tag ok">通过</span></td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>四、诚实性专项（「不允许欺骗」）</h2>
+<p>这一项是重点。凡是「界面/记录说的」和「实际转发/实际发生的不一致」，都算欺骗。本轮修掉 4 个：</p>
+
+<h3>缺口 1 · 改写生效了，记录还显示原始包</h3>
+<p><b>现象：</b>断点改写放行后客户端确实收到改写结果（源站日志可见），但 <code>/wpe/get</code> 里 HEX 仍是改写前的字节。<br>
+<b>性质：</b>列表在骗人 —— 你看到的不是真正发出去的东西。<br>
+<b>修复：</b>新增 <code>annotate_modify()</code>，改写生效后回填 <code>mod_hex</code>/<code>mod_ascii</code>/<code>mod_len</code> 并改 note。4 处 modify 路径全部调用。</p>
+<pre>note: 已被 WPE 改写：120 -&gt; 126 字节，实际转发的是 mod_hex
+mod_len: 126   （与源站实收长度一致）</pre>
+
+<h3>缺口 2 · WPE 自己发出的包不进抓包列表</h3>
+<p><b>现象：</b>用「构造发送 / 重放」发出去的包，<code>captured</code> 计数不动，列表里也找不到。<br>
+<b>性质：</b>抓包残缺 —— 一部分流量被系统性漏掉。<br>
+<b>修复：</b><code>_send_one()</code> 发完统一记账（c2s 记自己发的、s2c 记回包），标签 <code>wpe-send</code> / <code>wpe-replay #N</code>，note 标明「WPE 主动发出，非客户端流量」。</p>
+
+<h3>缺口 3 · 列表里的 HEX 是预览，却没说</h3>
+<p><b>现象：</b>列表把 HEX 截到 512 字符回传（避免一次几 MB），但响应里没有任何标记。<br>
+<b>性质：</b>调用方会把预览当全文，据此判断「这个包里没有 X」。<br>
+<b>修复：</b>新增 <code>hex_trunc</code> / <code>hex_full_len</code> 字段，列表行打「预览」标，完整内容指向「详情」。</p>
+
+<h3>缺口 4 · 过滤只在窗口内生效，0 命中不等于不存在</h3>
+<p><b>现象：</b>缓冲 4000 条，过滤只扫到 <code>limit</code> 条就停。用户筛 <code>app=TLS</code> 得到 0 条，会以为没有 TLS 流量 —— 实际是 TLS 被 UDP 洪流挤出了最新 300 条之外。<br>
+<b>性质：</b>沉默的假否定，比前三个更隐蔽。<br>
+<b>修复：</b><code>list()</code> 改为返回覆盖范围元信息，界面如实显示：</p>
+<pre>55 条（扫描最新 55 / 缓冲 55，已扫完）
+49 条（扫描最新 254 / 缓冲 254，已扫完）
+空列表时：最新 N 条里没有命中；缓冲里共 B 条，更旧的还没扫。把「条数」调大再试。</pre>
+
+<h3>缺口 5 · 断点超时自动放行，不留痕</h3>
+<p><b>现象：</b><code>maybe_hold()</code> 30s 超时后直接原样转发，日志有、记录没有。<br>
+<b>性质：</b>回头看列表的人会以为这个包压根没被拦过 —— 事实上它被卡了 30 秒。<br>
+<b>修复：</b>新增 <code>mark_action()</code>，超时分支写入 <code>wpe_action="timeout"</code> +
+note「断点超时（30s 无人放行）已自动原样转发」。</p>
+
+<h3>缺口 6 · 丢弃之后不留痕</h3>
+<p><b>现象：</b>断点 drop 之后，包被扔了，但列表里那条记录和正常转发的包长得一模一样。<br>
+<b>性质：</b>这是最要命的一条 —— 你看着一条封包记录，无法判断它<b>到底有没有发出去</b>。<br>
+<b>修复：</b>drop 写 <code>wpe_action="drop"</code> + note「已被 WPE 丢弃：没有转发给 &lt;目标&gt;」；
+forward 写 <code>wpe_action="forward"</code> + note「断点放行：已原样转发给 &lt;目标&gt;」。
+列表行与详情卡都显示处置标签（<span class="tag bad">已丢弃</span>
+<span class="tag warn">已改写</span> <span class="tag ok">已放行</span>
+<span class="tag warn">超时放行</span>）。</p>
+
+<h3>缺口 7 · 「导出」导的是残缺档，却管它叫存档</h3>
+<p><b>现象：</b>列表里的 <code>hex</code> 是 512 字符<b>预览</b>（缺口 3 已标注），而「导出 JSON」直接
+把列表数据序列化了 —— 导出来的文件里 hex 是截断过的。<br>
+<b>性质：</b>导出/导入是 WPE 的 Save / Load。拿预览当存档，导入时就还原不出原始字节，
+用户会以为「我存下来了全部」，实际存的是个残缺档。<br>
+<b>修复：</b>新增服务端 <code>/wpe/export</code>，直接吐<b>完整 hex</b>。因为完整 hex 很大
+（4000 条 × 单包最大 64KB ≈ 500MB），设了上限（2000 条 / 8MB hex），
+并且<b>上限一到就如实报出 <code>complete=false</code> + <code>stopped_by</code></b>，
+界面弹的是「只导出 N / M 条（触发条数上限 2000）—— 更旧的没导进去，这不是全部」，
+不是「导出成功」。TXT 导出保持人读格式，并在文件头写明「hex 只带预览，要完整存档请用 JSON」。</p>
+
+<h3>缺口 8 · 导入的包会被当成实时抓到的流量</h3>
+<p><b>现象：</b>导入进来的封包和实时抓到的包在列表里长得一模一样。<br>
+<b>性质：</b>这是最恶劣的一种骗人 —— 列表里混进一批来路不明的包，看的人会当成真抓到的。
+而且导入的文件是<b>外部输入</b>，它可以声称任何东西。<br>
+<b>修复：</b>三条硬规则：<br>
+① 每条导入的包写 <code>imported=true</code>，note 写明「导入（非实时流量，来自导出文件）」，
+列表行标 <span class="tag bad">导入</span>，详情卡加「来源」一行（<span class="tag ok">实时抓取</span> /
+<span class="tag bad">导入</span>）；<br>
+② <b>len 与 hex 字节数对不上就拒收</b>（说明这份导出是被截断过的预览），
+并把拒收理由逐条返回，不静默丢弃；<br>
+③ <code>app</code>/<code>summary</code> <b>按实际字节重新解析</b>，不信文件里的声明 ——
+文件可以写任何东西，字节才是事实。</p>
+
+<div class="note">
+  <b>至此，列表里的每一条记录都能回答五个问题：</b>
+  它从哪来到哪去、内容是什么、被自动解析成什么、<b>它最终到底有没有被转发出去</b>、
+  <b>以及它是实时抓到的还是导入的</b>。
+</div>
+
+<div class="note danger">
+  <b>另一处如实标注（未修，因为行为本身正确）：</b>CONNECT 请求头在隧道建立后才补记，
+  此时改写 CONNECT 头不改变任何行为。代码里如实写日志
+  <code>WPE 改写 CONNECT #N 已忽略（隧道已建立，头无实际作用）</code>，
+  不假装改写生效。
+</div>
+</div>
+
+<div class="card">
+<h2>五、实测证据</h2>
+
+<h3>5.1 全功能端到端（服务器本机，含真实源站对照）</h3>
+<pre>== 1. 抓包 + 自动解析 ==
+    c2s: app=HTTP summary='GET http://127.0.0.1:18099/probe-a HTTP/1.0  Host=…'
+    s2c: app=HTTP summary='HTTP/1.1 200 OK'
+== 2. 过滤（dir / proto / app / target / hex）==  全部命中且无杂质
+== 3. 详情 ==  详情 hex 232 字符，含请求行明文
+== 4. 断点 drop ==  客户端 status=403，丢弃计数 +1
+== 5. 断点 modify ==
+    改写 120 -&gt; 126 字节
+    客户端 status=200 body=b'ORIGIN-OK :: GET /probe-a-REWRITTEN HTTP/1.0'
+    源站实收：['GET /probe-a HTTP/1.0', 'GET /probe-a-REWRITTEN HTTP/1.0']
+    记录 note='已被 WPE 改写：120 -&gt; 126 字节，实际转发的是 mod_hex'
+== 6. 断点 forward ==  客户端 200，源站收到原始路径，放行后队列已空
+== 7. 重放 ==  sent=116 reply=140
+== 8. 构造发送 ==  TCP sent=38 reply=122；且进抓包列表
+== 9. 统计 ==  字段齐全（captured=21453 buffered=4000/4000）
+== 10. 清空 ==  cleared=4000，列表归零
+ALL PASS</pre>
+<p class="mut">关键：第 5 步客户端拿到的 body 里就是 <code>/probe-a-REWRITTEN</code> —— 改写真的端到端生效了，
+不是「记录说改了」而已。</p>
+
+<h3>5.2 自动解析（含真实 DNS 应答）</h3>
+<pre>DNS 查询 -&gt; ('DNS', '查询 A? example.com (txid 0x1234)')
+DNS 应答 -&gt; ('DNS', '应答 A example.com -&gt; 172.66.147.243, 104.20.23.154 (txid 0x1234)')
+TLS CH   -&gt; ('TLS', 'ClientHello TLS1.2 SNI=www.baidu.com len=517')
+真实设备流量：'查询 A? down.anticheatexpert.com'
+              '应答 A speed.ino.qq.com -&gt; 101.226.101.213, 101.91.33.57'</pre>
+
+<h3>5.3 真实浏览器渲染（Chromium 154 headless）</h3>
+<p class="mut">复核时间 2026-09-26 04:10，线上适配层 <code>7d893998…</code>（v9）+ 前端 <code>d3103a95…</code>（v6）。</p>
+<pre>URL: http://203.0.113.10:8890/?token=***  →  路由到 #biz.wpe
+表头：# 时间 方向 协议 应用 客户端 目标 长度 摘要（自动解析） 操作
+计数：800 条（扫描最新 800 / 缓冲 4000，更旧的未扫）      ← 覆盖范围如实上报
+统计：抓包 34013  缓冲 4000/4000  断点 关
+      放行 75  丢弃 6  改写 4  重放 1  发送 2  运行 932.2s
+列表：800 行全部渲染，当前窗口内应用层全部为 UDP（真实设备流量）
+详情卡：时间 04:10:46.309  客户端 117.183.29.197:1863  目标 1.13.118.119:40775
+        应用层 UDP · 自动解析「13 字节 UDP 载荷」· 标签 udp-down
+        WPE 处置「未命中断点」· 备注 —        ← 处置字段存在且未误标
+断点卡文案：每个包各自计时，30 秒无人放行就自动原样放行（防止把连接吊死）
+            —— 因为规则双向生效，一来一回最长约 60 秒。
+            放行/丢弃/超时都会写进记录（列表里带处置标签）。
+静态资源：/wpe.js 200，26458 字节，md5 d3103a953abd7b7d1a2f354841b2606b（与本地一致）</pre>
+<p class="mut">加密的游戏载荷被如实标为「UDP 载荷」，没有硬猜成别的协议。
+列表里的「处置标签」渲染由前端 DOM 桩自检覆盖（见 5.4），后端确实写入
+<code>wpe_action</code> 由 5.1 与 5.5 两套端到端实测覆盖 —— 两段拼起来才是完整闭环。
+（本次又在真实浏览器上直接看到了「导入」标签与详情「来源」，见 5.9。）</p>
+
+<h3>5.4 离线自检</h3>
+<ul>
+  <li>适配层 <code>--selftest</code>：全部 PASS（复选框下标、单行约束、账号往返、密码约束）</li>
+  <li>前端渲染自检（Node vm + DOM 桩）：<b>ALL PASS</b>（模块注册 / 函数暴露 / HEX dump / 节点齐全 / 应用列 / 摘要列 / 应用过滤拼串 / 覆盖范围计数 / 预览标注 / <b>处置标签 wpeActTag</b> / <b>详情卡含「WPE 处置」</b>）</li>
+</ul>
+
+<h3>5.5 UDP 断点 + 30 秒超时兜底（服务器本机，含自建 UDP echo 源站对照）</h3>
+<p>UDP 走的是共享单端口中继 + 分发循环，卡包的副作用和 TCP 完全不同（会推迟其它关联的包），
+所以单独测。断点规则收窄到测试专用目标 <code>{"proto":"udp","target":"18099"}</code> ——
+线上真实设备的 UDP 流量不碰。</p>
+<pre>== 0. 基线：不断点，UDP 往返正常 ==      收到 b'ECHO:HELLO-A'
+== 1. 断点 drop ==
+    卡住的：[(13844, 'c2s', 'udp-up', '127.0.0.1:18099')]
+    丢弃后客户端收不到回包
+    记录留痕：#13844 c2s udp udp-up target=127.0.0.1:18099
+              wpe_action=drop
+              note='已被 WPE 丢弃：没有转发给 127.0.0.1:18099'
+== 2. 断点 modify ==
+    改写目标 #15225（c2s）
+    客户端收到 b'ECHO:HELLO-C-MODIFIED'
+    源站实收 [b'HELLO-A', b'HELLO-C-MODIFIED']
+    记录 note='已被 WPE 改写：7 -&gt; 16 字节，实际转发的是 mod_hex' mod_len=16
+== 3. 断点 forward ==
+    客户端收到 b'ECHO:HELLO-D'
+    记录 note='断点放行：已原样转发给 127.0.0.1:18099'
+== 4. ★ 30s 超时兜底 ==
+    不放行，等自动超时……
+    客户端收到 b'ECHO:HELLO-TIMEOUT'（等待 60.0s）
+    超时留痕 2 条：[(16186, 's2c'), (15577, 'c2s')]
+    note='断点超时（30s 无人放行）已自动原样转发'
+    测试的断点队列已空（没有残留）
+ALL PASS</pre>
+<p class="mut">三点值得说清楚：<br>
+① <b>丢弃不是「静默消失」</b>——记录里写着「没有转发给 127.0.0.1:18099」，看列表的人能回答「这个包去哪了」。<br>
+② <b>改写是端到端生效</b>——客户端收到的和源站收到的都是 <code>HELLO-C-MODIFIED</code>，且 <code>mod_len=16</code> 与实际转发字节数一致。<br>
+③ <b>超时 60.0s 不是 bug</b>：断点规则是双向的（WPE 过滤器本来就同时管 send 和 recv），
+c2s 卡 30 秒自动放行后，s2c 回包又被同一条规则卡 30 秒，一来一回约 60 秒。
+关键是客户端<b>最终仍拿到了回包</b>，没有被吊死 —— 这正是超时兜底要保证的。</p>
+
+<h3>5.6 隔离性说明（为什么上一版测试报 7 个 FAIL）</h3>
+<p>第一版 UDP 测试用的规则是 <code>{"proto":"udp"}</code>，结果把线上真实设备的游戏 UDP 流量
+（<code>43.137.27.178:17500</code> 等上千条）一起拦了：测试自己的包被淹没在噪声里，
+放行循环放的全是设备包，最后 7 项断言集体失败。<b>那是测试没隔离，不是产品坏了</b>——
+同一功能的 TCP 版全功能 E2E 与单点诊断脚本当时均已通过。把规则收窄到
+<code>target=18099</code> 后，同一条链路 ALL PASS。真实流量是别人的连接，测试不该碰。</p>
+<p>同一类问题在 <code>_test_wpe_full.py</code> / <code>_test_wpe_app.py</code> 上也出现过一次：
+它们<b>没有在开头清空缓冲</b>，于是继承了上一轮留下的、发往同一目标的旧包，
+第 1 节按 <code>target</code> 挑包时挑到了旧包，报出 2 个 FAIL，重跑又全过 ——
+典型的测试卫生问题。已在两个脚本开头加 <code>hold off + clear</code>，
+把「起点干净」变成测试的前提，而不是碰运气。</p>
+
+<h3>5.7 导出 / 导入往返（WPE 的 Save / Load）</h3>
+<pre>== 1. 导出必须是完整 hex，不是预览 ==
+    导出 2/2 条，hex 共 180 字节，complete=True stopped_by=''
+    上限：{'max_packets': 2000, 'max_hex_bytes': 8388608}
+    导出 hex 是完整字节（len(hex)==len*2）      58 vs 58
+    导出 hex 能还原成原始字节                   123401000001000000000000076578616d706c65
+== 2. 导入：合法包进、截断包拒、脏数据拒 ==
+    imported=2 skipped=4 buffered=4
+      skip #2: len=9999 与 hex=3 字节不一致（多半是列表预览被截断，拒收）
+      skip #3: hex 缺失或长度为奇数
+      skip #4: hex 缺失或长度为奇数
+      skip #5: 不是对象
+== 3. 导入的包必须带「非实时流量」标记 ==
+    #99  label=imported-liar  imported=True len=29 app=DNS
+    #98  label=imported-ok    imported=True len=29 app=DNS
+    note='导入（非实时流量，来自导出文件）；原备注：原始备注'
+== 4. app/summary 按字节重新解析，不信文件声明 ==
+    文件声明 app=HTTP / summary=GET / I-AM-LYING，实际解析：app=DNS summary='查询 A? example.com (txid 0x1234)'
+== 5. 真往返：导出 → 原样导入 → 逐字节比对 ==
+    导出 2 条 → 导入 2 条，跳过 0 条
+    导入回来的字节与导出的逐字节一致
+== 6. 统计与上限 ==  imported=4，上限如实报出
+ALL PASS</pre>
+<p class="mut">第 4 步是这套测试里最有价值的一条：文件里<b>故意</b>声明
+<code>app=HTTP</code>、<code>summary=GET / I-AM-LYING HTTP/1.1</code>，
+而字节是一个 DNS 查询。导入后 app 是 <code>DNS</code>，摘要里那句谎话一个字都没留下 ——
+因为解析走的是字节，不是文件。导入是<b>外部输入</b>，外部输入可以声称任何东西。</p>
+
+<h3>5.8 经管理台 8890 的完整链路</h3>
+<pre>clear  {'ok': True, 'cleared': 98}
+send   ok=True sent=29 reply=61
+export status=200 ok=True full_hex=True exported=2 complete=True
+       第一条 len=29 hex_len=58 相等=True
+import status=200 ok=True imported=2 skipped=0 buffered=4
+       #644 label=wpe-send 回包 imported=True
+            note='导入（非实时流量，来自导出文件）；原备注：WPE 主动发送的应答'
+       #643 label=wpe-send      imported=True
+            note='导入（非实时流量，来自导出文件）；原备注：WPE 主动发出，非客户端流量'
+stat   imported=10 captured=634</pre>
+<p class="mut">管理台只做鉴权 + 原样转发，GET（export）与 POST（import）两条都通。</p>
+
+<h3>5.9 真实浏览器复核（v10 + wpe.js v7）</h3>
+<pre>统计：抓包 871  缓冲 0/4000  断点 关  放行 22  丢弃 4  改写 4  重放 3  发送 10  导入 10  运行 772.4s
+按钮：「导入封包…」存在 ✔　「导出 JSON（完整 hex）」存在 ✔
+导入一条（文件里故意写 app=HTTP / summary=I-AM-LYING）：
+  列表行：882 04:34:26.333 上行 udp DNS BROWSER-CHECK 1.1.1.1:53 29
+          查询 A? example.com (txid 0x1234)  导入  详情  重放
+  详情卡：时间 04:34:26.333  客户端 BROWSER-CHECK  目标 1.1.1.1:53
+          应用层 DNS  自动解析 查询 A? example.com (txid 0x1234)
+          标签 imported-vis  来源 导入 · 来自导出文件，不是本次实时抓到的流量
+          WPE 处置 未命中断点  备注 导入（非实时流量，来自导出文件）
+走真实 UI 导入链路（DataTransfer 塞入 File + 派发 change）：
+  wpeImport() 被调用，列表里出现 client=UI-IMPORT 的行 —— 命中 1 行</pre>
+<p class="mut">这一节把之前那条「只能靠 DOM 桩自检背书」的免责声明<b>消掉了</b>：
+「导入」标签、详情「来源」、以及「点按钮 → 选文件 → 导入」的链路，
+现在都是在真实浏览器、真实线上服务上跑出来的结果。</p>
+
+</div>
+
+<div class="card">
+<h2>六、版本链与回滚</h2>
+<table>
+<tr><th>阶段</th><th>md5</th><th>说明</th></tr>
+<tr><td>WPE 前</td><td class="mono">3e54a9b9…</td><td>宽限期修复 v4</td></tr>
+<tr><td>WPE v1</td><td class="mono">08a3c04a…</td><td>引擎 + UDP 捕获 + HTTP API + 启动初始化</td></tr>
+<tr><td>WPE v2</td><td class="mono">a6f27ff4…</td><td>补记 CONNECT / 明文 HTTP 请求（raw_head）</td></tr>
+<tr><td>WPE v3</td><td class="mono">2d85ec70…</td><td>改写回填 annotate_modify</td></tr>
+<tr><td>WPE v4</td><td class="mono">5f976f5d…</td><td>自动解析层</td></tr>
+<tr><td>WPE v5</td><td class="mono">c30c3f6a…</td><td>WPE 自发包记账</td></tr>
+<tr><td>WPE v6</td><td class="mono">94447df3…</td><td>重放标签</td></tr>
+<tr><td>WPE v7</td><td class="mono">2d3dcfb9…</td><td>HEX 预览截断标注</td></tr>
+<tr><td>WPE v8</td><td class="mono">a9cad69b…</td><td>过滤覆盖范围如实上报</td></tr>
+<tr><td>WPE v9</td><td class="mono">7d893998…</td><td>断点处置留痕（drop / forward / timeout）</td></tr>
+<tr><td><b>WPE v10（线上）</b></td><td class="mono">333e2272…</td><td>导出完整 hex + 导入（Save / Load）+ 导入标记</td></tr>
+</table>
+<p>备份：<code>/opt/ccpx/ccproxy_adapter.py.bak_wpe_v1..v9</code>；
+管理台 <code>/opt/charles-console/backups/wpe_20260926/</code>（wpe.js v1..v6）、
+<code>/opt/charles-console/backups/wpe_20260926_v10/</code>（v6 三文件）</p>
+<pre>回滚：
+sudo systemctl stop ccpx
+sudo install -o ccpx -g ccpx -m 644 \
+  /opt/ccpx/ccproxy_adapter.py.bak_wpe_v9 /opt/ccpx/ccproxy_adapter.py
+sudo systemctl start ccpx
+
+# 管理台静态（v10 之前）
+sudo cp /opt/charles-console/backups/wpe_20260926_v10/wpe.js.v6 \
+        /opt/charles-console/static/wpe.js
+sudo cp /opt/charles-console/backups/wpe_20260926_v10/modules.js \
+        /opt/charles-console/static/modules.js
+sudo cp /opt/charles-console/backups/wpe_20260926_v10/index.html \
+        /opt/charles-console/static/index.html
+sudo systemctl restart charles-console</pre>
+<p class="mut">铁律：停服务 → 改文件 → 起服务。</p>
+<table>
+<tr><th>文件</th><th>大小</th><th>md5（本地与线上逐字节一致）</th></tr>
+<tr><td class="mono">/opt/ccpx/ccproxy_adapter.py</td><td class="mono">135821</td><td class="mono">333e2272e60cd6f07647c833556b6a60</td></tr>
+<tr><td class="mono">static/wpe.js</td><td class="mono">30801</td><td class="mono">4858eadb51f09768af6b0e5972e6b3d0</td></tr>
+<tr><td class="mono">static/modules.js</td><td class="mono">29399</td><td class="mono">03b6e8c081c800a928d2629bea796322</td></tr>
+<tr><td class="mono">static/index.html</td><td class="mono">8647</td><td class="mono">f2975eb3ad90c49d825c445286076ed5</td></tr>
+<tr><td class="mono">static/app.js</td><td class="mono">83026</td><td class="mono">e0bab1435ccf70c2a93c54fe202db17f</td></tr>
+<tr><td class="mono">server.py</td><td class="mono">118139</td><td class="mono">dcdddf5918b7e0814aa308ad7abf16e9</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>七、未做 / 未验证（不粉饰）</h2>
+<table>
+<tr><th>项</th><th>状态</th><th>说明</th></tr>
+<tr><td>手机端实机跑一遍 WPE 抓包</td><td><span class="tag warn">未执行</span></td><td>协议层已用 SOCKS5 UDP 关联实测通过；手机端 UI 操作未做</td></tr>
+<tr><td>HTTPS 内容解密后编辑</td><td><span class="tag warn">未做</span></td><td>TLS 隧道内是密文，抓到的就是密文（能识别 SNI / 握手类型）；要改内容需解密通道，当前 <code>decryptSSL</code> 未启用</td></tr>
+<tr><td>断点规则双向命中</td><td><span class="tag acc">已标注</span></td><td>放行上行后下行响应会被同规则再拦一次 —— 这是 WPE 过滤器的固有语义，界面已写明提示</td></tr>
+<tr><td>UDP 卡包的全局副作用</td><td><span class="tag acc">已标注</span></td><td>UDP 走共享分发循环，卡包会推迟其它关联的包；界面建议规则里带 <code>proto=udp</code></td></tr>
+<tr><td>环形缓冲容量</td><td><span class="tag acc">已知</span></td><td>4000 条，高频 UDP 下几秒即满；旧包被挤出不等于没抓到，但确实看不到了</td></tr>
+<tr><td>列表「处置标签」在真实页面上的渲染</td><td><span class="tag ok">已实测</span></td><td>后端写 <code>wpe_action</code> 由 5.1 / 5.5 端到端实测覆盖；标签渲染由 5.4 前端 DOM 桩自检覆盖。真实页面上的渲染本次<b>已直接看到</b>（见 5.3 与 5.9）</td></tr>
+<tr><td>列表「导入」标签与详情「来源」在真实页面上的渲染</td><td><span class="tag ok">已实测</span></td><td>真实浏览器里导入一条，列表行出现 <span class="tag bad">导入</span>，详情卡「来源」显示「导入 · 来自导出文件，不是本次实时抓到的流量」（见 5.9）</td></tr>
+<tr><td>浏览器里「点按钮 → 选文件」的原生文件选择器</td><td><span class="tag acc">绕过</span></td><td>CDP 无法驱动系统文件选择框；改用 <code>DataTransfer</code> 给 <code>#wpeImpFile</code> 塞入真实 <code>File</code> 并派发 <code>change</code> 事件，走的是<b>同一条</b> <code>wpeImport()</code> 代码路径。差别只在「谁把文件放进 input」，不在导入逻辑</td></tr>
+</table>
+<p class="mut"><b>本轮补齐</b>：<br>
+① UDP 断点 + 30 秒超时兜底已实测 ALL PASS（见 5.5），从「写了但没测」升级为「已实测」；
+第一版报 7 个 FAIL 是测试没隔离，不是产品缺陷（见 5.6）。<br>
+② 补齐 WPE 缺失的 <b>Import / Load</b> 功能（见 5.7），并顺手修掉两个新的诚实性缺口（缺口 7、8）。<br>
+③ 修掉 <code>_test_wpe_full.py</code> / <code>_test_wpe_app.py</code> 的测试卫生问题：
+它们没在开头清空缓冲，会继承上一轮残留包导致偶发误报（见 5.6 末段）。</p>
+</div>
+
+<div class="card">
+<h2>八、关键入口</h2>
+<table>
+<tr><th>用途</th><th>地址 / 凭据</th></tr>
+<tr><td>管理台（统一登录）</td><td><code>http://203.0.113.10:8890/</code> · token <code>Console-Token-ChangeMe</code></td></tr>
+<tr><td>WPE 视图</td><td><code>http://203.0.113.10:8890/#biz.wpe</code></td></tr>
+<tr><td>适配层管理口</td><td><code>127.0.0.1:8893</code> · <code>admin:Adapter-Token-ChangeMe</code>（仅本机）</td></tr>
+<tr><td>客户端代理</td><td>HTTP <code>8888</code> / SOCKS5 <code>8889</code> / UDP 中继 <code>8888</code> · <code>TestPass1!</code>/<code>Ssh-ChangeMe-2026</code></td></tr>
+<tr><td>WPE 接口</td><td class="mono">/wpe/list · /wpe/get · /wpe/stat · /wpe/hold · /wpe/release · /wpe/replay · /wpe/send · /wpe/export · /wpe/import · /wpe/clear</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# /etc/systemd/system/rewrite.service
+#
+# 前后端分离重写版（FastAPI + Vue3）—— 取代 charles-console + 一花 PHP。
+#
+# 为什么 User=ubuntu 而不是专用用户：
+#   本服务需要 `sudo -n cat /opt/ccpx/config.json` 现读适配层凭据
+#   （/opt/ccpx 是 0750 ccpx:ccpx），以及读 /opt/ccpx/adapter.log。
+#   旧的 charles-console 就是 ubuntu + 免密 sudo，这里沿用同一套前提。
+#   换成专用用户就必须再配一条 sudoers，收益为零。
+#
+# ★ 端口：部署时先用 8903 起（不碰线上的 8890），验证通过再执行
+#   switchover.sh 把 8890 让过来。两个服务不能同时绑 8890。
+
+[Unit]
+Description=CCProxy Platform - Charles console / CCProxy adapter / WPE / 卡密 统一后端
+Documentation=file:/opt/rewrite/backend/README.md
+After=network-online.target ccpx.service
+Wants=network-online.target
+# 适配层是上游，它没起来时本服务照样能启动（只读端点会如实回 502）。
+# 不设 Requires，避免适配层重启把管理台一起带下去。
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/rewrite/backend
+EnvironmentFile=/opt/rewrite/rewrite.env
+ExecStart=/opt/rewrite/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${REWRITE_PORT}
+ExecStartPre=/opt/rewrite/venv/bin/python -c "import app.main"
+Restart=always
+RestartSec=2
+NoNewPrivileges=false
+PrivateTmp=true
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rewrite
+
+[Install]
+WantedBy=multi-user.target

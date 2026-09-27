@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UDP 并发丢包 · 根因定位与修复</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --line:#e3e6ea; --ink:#1f2328; --ink2:#5b6470;
+    --blue:#0969da; --blue-bg:#ddf4ff; --green:#1a7f37; --green-bg:#dafbe1;
+    --red:#cf222e; --red-bg:#ffebe9; --amber:#9a6700; --amber-bg:#fff8c5;
+    --mono:'Cascadia Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px 72px}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:30px}
+  h1{margin:0 0 8px;font-size:27px;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px}
+  h2{font-size:19px;margin:38px 0 14px;padding-left:11px;border-left:4px solid var(--blue)}
+  h3{font-size:16px;margin:24px 0 10px;color:var(--ink)}
+  p{margin:10px 0}
+  code{font-family:var(--mono);font-size:13px;background:#eef1f4;
+    padding:1.5px 5px;border-radius:4px;color:#0a3069}
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.62;background:#0d1117;
+    color:#e6edf3;padding:14px 16px;border-radius:8px;overflow-x:auto;margin:12px 0}
+  pre .c{color:#8b949e}
+  pre .g{color:#7ee787}
+  pre .r{color:#ff7b72}
+  pre .y{color:#e3b341}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin:16px 0}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 17px}
+  .kpi .n{font-size:24px;font-weight:650;letter-spacing:-.5px;line-height:1.25}
+  .kpi .l{font-size:12.5px;color:var(--ink2);margin-top:3px}
+  .ok{color:var(--green)} .bad{color:var(--red)} .warn{color:var(--amber)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#f0f2f5;font-weight:600;font-size:13px}
+  td code{background:transparent;padding:0}
+  .tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:20px;
+    font-weight:600;letter-spacing:.2px}
+  .t-bad{background:var(--red-bg);color:var(--red)}
+  .t-ok{background:var(--green-bg);color:var(--green)}
+  .t-info{background:var(--blue-bg);color:var(--blue)}
+  .t-warn{background:var(--amber-bg);color:var(--amber)}
+  ul{margin:10px 0;padding-left:22px} li{margin:5px 0}
+  .note{border-left:3px solid var(--blue);background:var(--blue-bg);
+    padding:11px 15px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  .danger{border-left:3px solid var(--red);background:var(--red-bg);
+    padding:11px 15px;border-radius:0 8px 8px 0;margin:14px 0;font-size:14px}
+  footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
+    color:var(--ink2);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>UDP 并发丢包 · 根因定位与修复</h1>
+  <div class="sub">
+    目标 <code>203.0.113.10:8889</code>（SOCKS5）· UDP 共享中继 <code>:8888</code><br>
+    报告时间 2026-09-26 · 全部结论来自实测，未验证项已明确标注
+  </div>
+</header>
+
+<div class="grid">
+  <div class="kpi"><div class="n bad">7 / 10</div><div class="l">修复前 · 并发 10（耗时 12.1s）</div></div>
+  <div class="kpi"><div class="n ok">200 / 200</div><div class="l">修复后 · 并发 200（耗时 0.3s）</div></div>
+  <div class="kpi"><div class="n ok">0 行</div><div class="l">修复后服务端错误日志</div></div>
+  <div class="kpi"><div class="n ok">0</div><div class="l">串包次数（qname 全对）</div></div>
+</div>
+
+<h2>一、现象</h2>
+<p>用户要求「所有流量数据包一个都不能放过」。共享单端口 UDP 中继上线后，单连接 DNS 查询可正常往返，但<strong>并发</strong>场景下稳定丢包：</p>
+<table>
+  <tr><th>并发数</th><th>成功</th><th>耗时</th><th>结论</th></tr>
+  <tr><td>3</td><td class="ok">3 / 3</td><td>0.2s</td><td>看似正常</td></tr>
+  <tr><td>5</td><td class="bad">4 / 5</td><td>12.1s</td><td>开始丢</td></tr>
+  <tr><td>10</td><td class="bad">7 / 10</td><td>12.1s</td><td>丢 30%</td></tr>
+  <tr><td>20</td><td class="bad">15 / 20</td><td>12.1s</td><td>丢 25%</td></tr>
+</table>
+<p>特征：<strong>零串包</strong>（回包 qname 全部对得上），<strong>全部走同一端口 8888</strong>（共享模式生效）。<code>12.1s</code> 是测试客户端的 UDP 接收超时，说明失败项是「一直没等到回包」。</p>
+
+<h2>二、排查取证</h2>
+
+<h3>第 1 步 · 先排除链路与 DNS</h3>
+<p>在服务器本机直连 DNS 并发压测，用于把「适配层问题」和「服务器→DNS 链路丢包」分开：</p>
+<pre><span class="c"># 服务器本机直连 223.5.5.5 / 114.114.114.114，各并发 10</span>
+并发 10 → <span class="g">10 / 10</span>，0.1s，<span class="g">0% 丢包</span></pre>
+<p class="note">链路干净，问题在适配层。同时 pcap 的 DNS 层显示：<strong>10 个查询全部有应答</strong>（t0–t9 都有 reply）。</p>
+
+<h3>第 2 步 · 网卡层看真相</h3>
+<p>全量抓包（<code>tcpdump -i eth0 -s 0</code>）显示客户端发了 10 个包，服务器只回 7 个：</p>
+<pre>02:50:30.430008 IP 117.183.29.197.1722 &gt; 10.1.0.10.8888: UDP, length 42
+02:50:30.430043 IP 117.183.29.197.1720 &gt; 10.1.0.10.8888: UDP, length 42
+<span class="c">... 客户端共 10 个（源端口 1720–1729）</span>
+02:50:30.443208 IP 10.1.0.10.8888 &gt; 117.183.29.197.1725: UDP, length 121
+02:50:30.443480 IP 10.1.0.10.8888 &gt; 117.183.29.197.1720: UDP, length 121
+<span class="c">... 服务器只回了 7 个（1721 / 1723 / 1729 没回）</span></pre>
+
+<h3>第 3 步 · 失败关联的自述</h3>
+<p>失败关联的收尾日志长这样 —— <strong>三个诊断计数全是 0</strong>，说明回包根本没进过上游 socket，不是「收到了没转发出去」：</p>
+<pre>中继结束（客户端 117.183.29.197:1714）
+  上行 1 包/32 字节  下行 <span class="r">0 包/0 字节</span>  裸包 0  早到 0  发失败 0</pre>
+
+<h3>第 4 步 · 时间线对齐（决定性证据）</h3>
+<p>把「关联认领」「回包进入上游 socket」「中继结束」三条日志按时间戳排在一起：</p>
+<pre>05.867 认领 1843          05.877 回包 → 1845
+05.870 认领 1844          05.878 回包 → 1843
+05.871 认领 1845          05.883 回包 → 1847
+05.876 认领 1846          05.891 回包 → 1849
+05.877 认领 1847          05.895 回包 → 1848
+05.881 认领 1848          05.900 回包 → 1851
+05.884 认领 1849          05.940 回包 → 1846
+05.890 认领 1850
+05.894 认领 1851
+05.897 认领 1852
+<span class="r">05.896 中继结束(1839) 下行 0   ← 失败：比自己的回包先结束
+05.898 中继结束(1840) 下行 0   ← 失败
+05.915 中继结束(1837) 下行 0   ← 失败</span>
+05.901 中继结束(1842) 下行 1
+05.917 中继结束(1836) 下行 1
+05.924 中继结束(1834) 下行 1
+05.962 中继结束(1838) 下行 1
+<span class="y">17.872 中继结束(1833) 下行 1   ← 12 秒后才结束（客户端超时后进程退出）</span></pre>
+<p class="danger">
+  <strong>三个失败关联在 05.896–05.915 就结束了，而它们的 DNS 回包在 05.877–05.940 才陆续到达。</strong>
+  关联提前结束 → 上游 socket 被关闭 → 在途 DNS 应答被内核丢弃（ICMP port unreachable）。<br>
+  这就是「回包没进 usock」的完整解释。
+</p>
+
+<h2>三、根因</h2>
+<p>问题出在 <code>_udp_associate_shared()</code> 的 <code>watch_control()</code>：TCP 控制连接一断，立刻 <code>stop.set()</code>，紧接着 <code>finally</code> 里 <code>usock.close()</code>。</p>
+<p>为什么这会造成丢包？因为<strong>共享模式下「哪条 TCP 配哪个 UDP 源」根本无法精确对应</strong>：</p>
+<ul>
+  <li>所有关联共用同一个收包端口 <code>8888</code>，客户端源地址只能靠「首个数据包到达时认领」；</li>
+  <li>认领策略只能按 <strong>IP + LIFO</strong>（同 IP 时优先认领最近建立的那条）；</li>
+  <li>实测手机和电脑<strong>共用同一个 NAT 出口</strong>（都是 <code>117.183.29.197</code>），同 IP 下并发多条关联时，认领结果与「TCP 控制连接的归属」是错开的。</li>
+</ul>
+<p>于是：某个客户端收到回包后关掉 TCP → <strong>结束的是它自己那条关联</strong>，而那条关联的 <code>usock</code> 可能正在为<strong>另一条</strong>关联服务 → 一关就把对方还在路上的回包丢了。</p>
+<div class="note">
+  这不是「共享模式设计错了」——回包路径本身是靠<strong>每条关联独立的上游 socket</strong> 区分的，天然不串包（实测 0 串包）。错的只是<strong>生命周期</strong>：控制连接断开时收摊太急。
+</div>
+
+<h2>四、修复</h2>
+<p>TCP 控制连接断开后，<strong>不立刻关闭上游 socket</strong>，给一个宽限期，让在途回包先发完：</p>
+<pre><span class="c"># ccproxy_adapter.py · watch_control()</span>
+try:
+    while True:
+        if not await reader.read(4096):
+            break
+except Exception:
+    pass
+
+<span class="c"># 宽限期：TCP 断了不等于在途回包已经收完</span>
+grace = float(cfg.get("udp_control_grace", 3.0) or 0.0)
+if grace &gt; 0:
+    log.info("UDP 关联控制连接断开 %s:%d，宽限 %.1fs 等在途回包",
+             peer[0], peer[1], grace)
+    await asyncio.sleep(grace)
+assoc["stop"].set()</pre>
+<p><strong>为什么是 3 秒</strong>：DNS 回包实测 50 ms 内到达，客户端 UDP 接收超时是 12 秒。3 秒足够覆盖任何在途回包，又不会让关联无谓地活着。</p>
+<p>同时把收尾日志补上「数据源」字段，让 <code>控制端口 → 数据源端口</code> 的映射可见（以前只打控制端口，排查时看不出一对一关系）：</p>
+<pre>SOCKS5 UDP ASSOCIATE 中继结束（控制 117.183.29.197:1559 → 数据源 117.183.29.197:1069）
+  上行 1 包/33 字节  下行 1 包/112 字节  裸包 0  早到 0  发失败 0</pre>
+<p>新增配置项 <code>udp_control_grace</code>（默认 <code>3.0</code>，设为 0 可退回旧行为）。</p>
+
+<h2>五、验证</h2>
+<p>用同一个压测工具（每个并发独立 UDP 源端口 + 唯一 qname，串包即失败）复测：</p>
+<table>
+  <tr><th>并发数</th><th>修复前</th><th>修复后</th><th>耗时</th></tr>
+  <tr><td>10</td><td class="bad">7 / 10（12.1s）</td><td class="ok">10 / 10</td><td>0.2s</td></tr>
+  <tr><td>20</td><td class="bad">15 / 20（12.1s）</td><td class="ok">20 / 20</td><td>0.2s</td></tr>
+  <tr><td>50</td><td>—</td><td class="ok">50 / 50</td><td>—</td></tr>
+  <tr><td>100</td><td>—</td><td class="ok">100 / 100</td><td>0.2s</td></tr>
+  <tr><td>200</td><td>—</td><td class="ok">200 / 200</td><td>0.3s</td></tr>
+</table>
+<p>全部命中同一中继端口 <code>8888</code>，qname 全对（零串包）。服务端日志核对：</p>
+<pre><span class="c">宽限触发次数</span>  <span class="g">380</span>
+<span class="c">错误 / Traceback 行数</span>  <span class="g">0</span>
+<span class="c">日志尾部</span>  全部为「下行 1 包」，<span class="g">不再出现「下行 0 包」的失败关联</span></pre>
+
+<h2>六、顺带收紧的运维项</h2>
+<p>核对抓包服务时发现磁盘风险：全量抓包峰值 <strong>27 GB/天</strong>（10 分钟写 188 MB），而清理原本<strong>每小时</strong>才跑一次。虽然「总量 ≤3 GB」的闸值能兜住，但清理一旦失败一天就会写满 23 GB 可用空间，服务全挂。</p>
+<ul>
+  <li>清理 cron 由 <code>17 * * * *</code> 改为 <code>*/10 * * * *</code>（每 10 分钟）；</li>
+  <li>峰值占用从「3 GB + 1.1 GB」压到「3 GB + 0.2 GB」≈ <strong>3.2 GB</strong>。</li>
+</ul>
+<p>当前状态：抓包服务 <span class="tag t-ok">active</span>，3 个 pcap 共 302 MB，磁盘使用 41%。</p>
+
+<h2>七、当前捕获能力矩阵</h2>
+<table>
+  <tr><th>维度</th><th>覆盖</th><th>说明</th></tr>
+  <tr><td>TCP 报文</td><td><span class="tag t-ok">全量</span></td><td>网卡层 pcap，<code>-s 0</code> 不截断</td></tr>
+  <tr><td>UDP 报文</td><td><span class="tag t-ok">全量</span></td><td>共享中继 <code>:8888</code>，修复后并发 200 零丢包</td></tr>
+  <tr><td>DNS</td><td><span class="tag t-ok">全量</span></td><td>含在 UDP 内，查询与应答都在 pcap 里</td></tr>
+  <tr><td>TLS SNI</td><td><span class="tag t-ok">已提取</span></td><td>ClientHello 明文，能看到加密流量访问的域名</td></tr>
+  <tr><td>TLS 载荷内容</td><td><span class="tag t-warn">密文</span></td><td>未做 MITM（<code>decryptSSL=false</code> 全透传），看不到明文</td></tr>
+  <tr><td>代理层嗅探日志</td><td><span class="tag t-info">仅首段</span></td><td>设计如此，只记每条连接第一个包，用于快速画像</td></tr>
+</table>
+
+<h2>八、变更与回滚</h2>
+<table>
+  <tr><th>文件</th><th>变更</th><th>回滚</th></tr>
+  <tr><td><code>/opt/ccpx/ccproxy_adapter.py</code></td><td>watch_control 加宽限期；收尾日志补数据源字段</td>
+      <td><code>cp ccproxy_adapter.py.bak_grace_20260926 ccproxy_adapter.py</code></td></tr>
+  <tr><td><code>/opt/ccpx/config.json</code></td><td>新增 <code>udp_control_grace: 3.0</code>（缺省即 3.0，可不写）</td>
+      <td>删除该键即可</td></tr>
+  <tr><td><code>root crontab</code></td><td>清理频率改每 10 分钟</td><td>改回 <code>17 * * * *</code></td></tr>
+</table>
+<p><strong>线上版本链</strong>：</p>
+<pre>88836 B  <span class="g">3e54a9b93cf14db5cdb974f3187924cd</span>  ← 当前（宽限期修复）
+87050 B                                    v3（带回包诊断日志）
+86524 B  bdd7a956fd4d9e3c8d98d33fa3ee9ddd  v2（去 wait_for 轮询）
+84861 B  cfbfbfaa726ff97dfead87a95f45b1dc  共享中继首版
+72441 B  bf5c265a2f9adaa460da096f61b72fbc  SNI 版</pre>
+<p class="note">配置修改铁律：<strong>停服务 → 改文件 → 起服务</strong>（Charles 退出时会把内存配置回写磁盘）。</p>
+
+<h2>九、遗留</h2>
+<ul>
+  <li><strong>手机端实机验证未做</strong> —— 本轮全部验证由外网主机发起，协议层已证通，但「手机经代理跑真实游戏/浏览器流量」尚未实测。</li>
+  <li>应用不读系统代理时仍会直连 —— UDP 通道已通，但需要 VPN/TUN 模式才能强制接管。</li>
+  <li>HTTPS 明文内容 —— 不做 MITM 时不可见，极限是 SNI + 目标 IP + 包长时序。</li>
+</ul>
+
+<footer>
+  报告由实测数据生成，未执行项已在「遗留」明确标注。<br>
+  抓包留存：<code>/opt/ccpx/capture/</code>（3 天 / 3 GB 双闸）
+</footer>
+
+</div>
+</body>
+</html>

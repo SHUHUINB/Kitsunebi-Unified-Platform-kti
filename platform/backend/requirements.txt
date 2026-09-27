@@ -1,0 +1,11 @@
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.1.1
+pydantic==2.13.5
+PyJWT==2.15.0
+python-multipart==0.0.32
+httpx==0.28.1
+bcrypt==5.0.0
+# 设备侧根证书引导页的二维码（纯 Python，SVG 输出不需要 PIL）。
+# 代码里是懒加载 + 缺失兜底：没装只会少一张二维码，不会让引导页挂掉。
+qrcode==8.2
