@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # 部署 / 更新新后端（幂等，可重复跑）。
 #
-# 默认部署到 **8903 暂存端口**，不碰线上 8890。
-# 切换 8890 是单独一步 —— 见 switchover.sh，或用 `--switch` 在本脚本末尾顺带做。
-# 两件事分开，是因为「部署」出错只影响暂存端口，「切换」出错才是事故。
+# 部署到哪个端口由 `rewrite.env` 的 `REWRITE_PORT` 决定，本脚本不自己挑。
+#
+# ★ 历史上 8903 是迁移期的暂存端口（那时线上 8890 还跑着旧 charles-console）。
+#   旧管理台已经删掉，**平台自己就住在 8890** —— 所以「部署到 8890」现在就是
+#   一次正常更新，不是事故。`switchover.sh` 是迁移期工具，留着的意义只剩回滚。
 #
 # 用法（在服务器上以 ubuntu 跑，需要免密 sudo）：
 #     bash deploy.sh                 # 部署 + 重启 + 冒烟（端口沿用现有 rewrite.env）
 #     bash deploy.sh --fresh         # 同上，并**重新生成** JWT 密钥与管理员强口令
-#     bash deploy.sh --fresh --switch # 全新部署 + 生成强口令 + 直接切到 8890
+#     bash deploy.sh --fresh --switch # 全新部署 + 生成强口令 + 顺带跑一次 switchover
 #     bash deploy.sh --no-smoke      # 只部署
 #     bash deploy.sh --switch        # 部署完顺带执行 switchover.sh
 #     bash deploy.sh --purge-old     # 删掉旧 charles-console（**先备份**，需已在 8890 上跑通）
@@ -172,14 +174,14 @@ if [ "$SMOKE" = "1" ]; then
 fi
 
 echo
-echo "部署完成。当前跑在端口 $PORT（暂存）。"
+echo "部署完成。当前跑在端口 $PORT。"
 
 if [ "$SWITCH" = "1" ]; then
   echo
   echo "== 附带执行切换（--switch）=="
   bash "$SRC_DIR/deploy/switchover.sh"
 else
-  echo "确认无误后执行：bash switchover.sh    （或下次加 --switch 一步到位）"
+  echo "（仅迁移期需要：把平台从暂存端口搬到 8890 —— bash switchover.sh）"
 fi
 
 if [ "$PURGE_OLD" = "1" ]; then

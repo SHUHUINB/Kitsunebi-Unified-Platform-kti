@@ -85,7 +85,10 @@ class Settings:
         "REWRITE_SITE_NAME", "kit端口统一平台-soun"))
     version: str = "1.0.0"
     host: str = field(default_factory=lambda: _env("REWRITE_HOST", "127.0.0.1"))
-    port: int = field(default_factory=lambda: _env_int("REWRITE_PORT", 8900))
+    # 默认端口跟着**当前部署**走：平台自己住在 8890。
+    # 迁移期那个 8903 暂存端口已经和旧管理台一起退休了 —— 留着旧默认值，
+    # 全新部署会把服务绑到一个谁都不在听的端口上，然后所有冒烟都打不通。
+    port: int = field(default_factory=lambda: _env_int("REWRITE_PORT", 8890))
     # 生产环境应置于 Nginx 之后；开发环境放开本机前端端口。
     cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(
         o.strip() for o in _env(

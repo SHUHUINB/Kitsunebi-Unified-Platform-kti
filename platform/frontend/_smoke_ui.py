@@ -1,6 +1,6 @@
 """前端 UI 冒烟 —— 真开浏览器、真渲染、真收集控制台错误。
 
-    python _smoke_ui.py            # 默认打 http://127.0.0.1:8900
+    python _smoke_ui.py            # 默认打 http://127.0.0.1:8890
 
 为什么不是「能 build 就算过」：构建只证明模板能编译，证明不了运行时。
 视图里一个 undefined 取值就够让整页白屏，而 build 是绿的。
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import websocket
 
-BASE = os.environ.get('SMOKE_BASE', 'http://127.0.0.1:8900')
+BASE = os.environ.get('SMOKE_BASE', 'http://127.0.0.1:8890')
 PORT = int(os.environ.get('SMOKE_CDP_PORT', '9333'))
 USER = os.environ.get('SMOKE_USER', 'admin')
 PWD = os.environ.get('SMOKE_PWD', 'admin')

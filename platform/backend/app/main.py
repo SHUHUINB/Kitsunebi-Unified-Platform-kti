@@ -1,6 +1,6 @@
 """应用入口。
 
-    uvicorn app.main:app --host 127.0.0.1 --port 8900 --reload
+    uvicorn app.main:app --host 127.0.0.1 --port 8890 --reload
 
 路由挂载一览（与旧栈的对照见 docs/API.md）：
 

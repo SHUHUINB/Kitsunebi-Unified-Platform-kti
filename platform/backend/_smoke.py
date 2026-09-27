@@ -3,7 +3,10 @@
 用法（先另开一个进程跑 uvicorn，或让本脚本自己起）：
 
     set REWRITE_JWT_SECRET=smoke
-    python _smoke.py            # 默认打 http://127.0.0.1:8900
+    python _smoke.py            # 默认打 http://127.0.0.1:8890
+
+★ 默认端口跟着**当前部署**走：平台自己就住在 8890（迁移期那个 8903 暂存端口
+  和旧管理台一起退休了）。要打别的地址用 SMOKE_BASE 覆盖。
 
 只做「有没有跑起来、契约对不对」的验证，不验证上游业务语义
 （上游是远端 203.0.113.10:8893，本机多半不可达 —— 那部分会如实标 SKIP/502）。
@@ -17,7 +20,7 @@ import time
 
 import httpx
 
-BASE = os.environ.get('SMOKE_BASE', 'http://127.0.0.1:8900')
+BASE = os.environ.get('SMOKE_BASE', 'http://127.0.0.1:8890')
 USER = os.environ.get('SMOKE_USER', 'admin')
 PWD = os.environ.get('SMOKE_PWD', 'admin')
 
@@ -36,7 +39,7 @@ def skip(name, detail=''):
 
 def main() -> int:
     # trust_env=False：本机 shell 常带 http_proxy（抓包工具 / 公司网络），
-    # 不关的话连 127.0.0.1:8900 都会走代理，测试结果随宿主机环境漂移。
+    # 不关的话连 127.0.0.1:8890 都会走代理，测试结果随宿主机环境漂移。
     cli = httpx.Client(base_url=BASE, timeout=20.0, trust_env=False)
 
     # ---- 元信息 --------------------------------------------------------- #
